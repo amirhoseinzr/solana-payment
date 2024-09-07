@@ -1,49 +1,44 @@
-use borsh::{BorshDeserialize, BorshSerialize};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint,
     entrypoint::ProgramResult,
-    msg,
-    program_error::ProgramError,
     pubkey::Pubkey,
+    system_instruction,
+    program::invoke,
+    msg,
 };
+use solana_program::program_error::ProgramError;
 
-/// Define the type of state stored in accounts
-#[derive(BorshSerialize, BorshDeserialize, Debug)]
-pub struct GreetingAccount {
-    /// number of greetings
-    pub counter: u32,
-}
-
-// Declare and export the program's entrypoint
 entrypoint!(process_instruction);
 
-// Program entrypoint's implementation
-pub fn process_instruction(
-    program_id: &Pubkey, // Public key of the account the hello world program was loaded into
-    accounts: &[AccountInfo], // The account to say hello to
-    _instruction_data: &[u8], // Ignored, all helloworld instructions are hellos
+fn process_instruction(
+    _program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    instruction_data: &[u8],
 ) -> ProgramResult {
-    msg!("Hello World Rust program entrypoint");
 
-    // Iterating accounts is safer than indexing
     let accounts_iter = &mut accounts.iter();
+    let payer_account = next_account_info(accounts_iter)?;
+    let recipient_account = next_account_info(accounts_iter)?;
 
-    // Get the account to say hello to
-    let account = next_account_info(accounts_iter)?;
 
-    // The account must be owned by the program in order to modify its data
-    if account.owner != program_id {
-        msg!("Greeted account does not have the correct program id");
-        return Err(ProgramError::IncorrectProgramId);
+    let recipient_pubkey = Pubkey::new(&instruction_data[0..32]);
+
+    if *recipient_account.key != recipient_pubkey {
+        msg!("Recipient account does not match the provided public key.");
+        return Err(ProgramError::InvalidArgument);
     }
 
-    // Increment and store the number of times the account has been greeted
-    let mut greeting_account = GreetingAccount::try_from_slice(&account.data.borrow())?;
-    greeting_account.counter += 1;
-    greeting_account.serialize(&mut *account.data.borrow_mut())?;
+    let transfer_instruction = system_instruction::transfer(
+        &payer_account.key,
+        &recipient_account.key,
+        1_000_000_000, // 1 sol is eq this value lamport
+    );
 
-    msg!("Greeted {} time(s)!", greeting_account.counter);
+    invoke(
+        &transfer_instruction,
+        &[payer_account.clone(), recipient_account.clone()],
+    )?;
 
     Ok(())
 }
